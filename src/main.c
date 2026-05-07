@@ -1,5 +1,6 @@
 #include "../include/loader.h"
 #include "../include/memory.h"
+#include "../include/pipeline.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,11 +26,8 @@ int main(int argc, char *argv[]) {
 
     printf("Data segment starts at address %d\n", DATA_SEGMENT_START);
 
-    for (int index = 0; index < instruction_count; index++) {
-        printf("Address %d: 0x%08X\n",
-               index,
-               read_memory((uint32_t)index));
-    }
+    init_processor();
+    run_simulation();
 
     return EXIT_SUCCESS;
 }

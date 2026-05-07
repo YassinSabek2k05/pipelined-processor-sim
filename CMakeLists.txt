@@ -11,6 +11,7 @@ add_executable(program
     src/loader.c
     src/memory.c
     src/parser.c
+    src/pipeline.c
 )
 
 target_include_directories(program PRIVATE "${CMAKE_SOURCE_DIR}/include")
