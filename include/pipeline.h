@@ -23,11 +23,28 @@ typedef struct {
 } IF_ID_Reg;
 
 typedef struct {
+    bool regWrite;
+    bool memRead;
+    bool memWrite;
+    bool memToReg;
+
+    bool aluSrc;
+    bool branch;
+    bool jump;
+
+    uint32_t aluOp;
+} ControlSignals;
+
+typedef struct {
     uint32_t instruction;
     uint32_t pc;
     bool valid;
     uint32_t opcode, r1, r2, r3, shamt, address;
     int32_t imm;
+    int32_t val1; // value of reg 1
+    int32_t val2; // value of reg 2
+    uint32_t dest;
+    ControlSignals control;
 } ID_EX_Reg;
 
 typedef struct {
@@ -35,6 +52,10 @@ typedef struct {
     uint32_t pc;
     bool valid;
     uint32_t alu_result;
+    uint32_t write_data;
+    uint32_t store_data;
+    uint32_t dest;
+    ControlSignals control;
 } EX_MEM_Reg;
 
 typedef struct {
@@ -43,7 +64,8 @@ typedef struct {
     bool valid;
     uint32_t alu_result;
     uint32_t memory_data;
-    uint32_t reg_dest;
+    uint32_t dest;
+    ControlSignals control;
 } MEM_WB_Reg;
 
 /**
