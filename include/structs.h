@@ -62,7 +62,6 @@ typedef struct {
     int32_t val1;
     int32_t val2;
 
-    // control signals
 } ID_EX_Reg;
 
 typedef struct {
@@ -77,6 +76,8 @@ typedef struct {
 
     enum ACCESS mem_access;
     bool reg_write;
+    bool branch_taken;
+    uint32_t branch_target;
 
 } EX_MEM_Reg;
 
@@ -88,7 +89,7 @@ typedef struct {
     int32_t  alu_result;
     int32_t  memory_data;
     uint32_t dest;
-
+    bool reg_write;
 } MEM_WB_Reg;
 
 
