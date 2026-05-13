@@ -3,6 +3,7 @@
 #include "../include/loader.h"
 #include <stdio.h>
 #include <string.h>
+#include "../include/structs.h"
 
 ProcessorState cpu;
 
@@ -30,7 +31,6 @@ void fetch_stage(void) {
         cpu.if_id.instruction = read_memory(cpu.pc);
         cpu.if_id.pc = cpu.pc;
         cpu.if_id.valid = true;
-        
         printf("Fetch Stage: Fetching instruction 0x%08X from address %u\n",
                cpu.if_id.instruction, cpu.pc);
 
@@ -42,78 +42,148 @@ void fetch_stage(void) {
         printf("Fetch Stage: No more instructions to fetch (PC=%u)\n", cpu.pc);
     }
 }
+int32_t sign_extend_18(uint32_t imm);
+
+int32_t sign_extend_18(uint32_t imm) {
+    if (imm & 0x20000) { // Check if 18th bit is 1
+        return (int32_t)(imm | 0xFFFC0000); // Sign extend
+    }
+    return (int32_t)imm;
+}
 
 void decode_stage(void) {
-    if (!cpu.id_stage.valid) {
+
+    if (!cpu.if_id.valid) {
         printf("Decode Stage: Idle\n");
         return;
     }
-    int stage_cycle = (cpu.cycles % 2 == 0) ? 1 : 2;
-    printf("Decode Stage: Decoding instruction 0x%08X (Cycle %d/2)\n",
-           cpu.id_stage.instruction, stage_cycle);
+    cpu.id_ex.cycles_in_stage++;
+
+    if (cpu.id_ex.cycles_in_stage==1) {
+        cpu.id_ex.valid=false;
+        cpu.id_ex.pc = cpu.if_id.pc;
+        cpu.id_ex.instruction = cpu.if_id.instruction;
+        cpu.id_ex.opcode = (enum OPCODE)(cpu.id_ex.instruction >> 28);
+        cpu.id_ex.r1 = cpu.id_ex.instruction >> 23 & 0x1F;
+        cpu.id_ex.r2 = cpu.id_ex.instruction >> 18 & 0x1F;
+        cpu.id_ex.r3 = cpu.id_ex.instruction >> 13 & 0x1F;
+        cpu.id_ex.address = cpu.id_ex.address & 0x0FFFFFFF;
+        cpu.id_ex.shamt = cpu.id_ex.instruction & 0x1FFF;
+        cpu.id_ex.imm = sign_extend_18(cpu.id_ex.instruction & 0x3FFFF);
+        cpu.id_ex.val1 = cpu.R[cpu.id_ex.r1];
+        cpu.id_ex.val2 = cpu.R[cpu.id_ex.r2];
+
+        printf("Decode Stage: Decoding instruction 0x%08X (Cycle %d/2)---", cpu.id_ex.instruction, cpu.id_ex.cycles_in_stage);
+        printf("Opcode: %d---", cpu.id_ex.opcode);
+        printf("R1: %d, Val1: %d ---", cpu.id_ex.r1, cpu.id_ex.val1);
+        printf("R2: %d, Val2: %d ---", cpu.id_ex.r2, cpu.id_ex.val2);
+        printf("R3: %d ---", cpu.id_ex.r3);
+        printf("Imm: %d ---", cpu.id_ex.imm);
+        printf("Shamt: %d ---", cpu.id_ex.shamt);
+        printf("Address: %d\n", cpu.id_ex.address);
+    }
+    else if (cpu.id_ex.cycles_in_stage== 2) {
+        cpu.id_ex.valid=true;
+        cpu.if_id.valid=false;
+        printf("Decode Stage: Decoding instruction 0x%08X (Cycle %d/2) - Opcode: %d\n",
+               cpu.id_ex.instruction, cpu.id_ex.cycles_in_stage, cpu.id_ex.opcode);
+        cpu.id_ex.cycles_in_stage=0;
+    }
+
 }
 
 void execute_stage(void) {
-    if (!cpu.ex_stage.valid) {
-        printf("Execute Stage: Idle\n");
-        return;
+    if (!cpu.id_ex.valid) return;
+
+    cpu.ex_mem.cycles_in_stage++;
+
+    if (cpu.ex_mem.cycles_in_stage == 1) {
+        switch (cpu.id_ex.opcode) {
+            case ADD:
+                cpu.ex_mem.alu_result = cpu.id_ex.val1 + cpu.id_ex.val2;
+                printf("----------------\nalu=%d\n----------------\n",cpu.ex_mem.alu_result);
+                break;
+            case SUB:
+                cpu.ex_mem.alu_result = cpu.id_ex.val1 - cpu.id_ex.val2;
+                break;
+            case MUL:
+                cpu.ex_mem.alu_result = cpu.id_ex.val1 * cpu.id_ex.val2;
+                break;
+            case MOVI:
+                cpu.ex_mem.alu_result=cpu.id_ex.imm;
+                break;
+            case AND:
+                cpu.ex_mem.alu_result = cpu.id_ex.val1 & cpu.id_ex.val2;
+                break;
+            case ORI:
+                cpu.ex_mem.alu_result = cpu.id_ex.val2 | cpu.id_ex.imm;
+                break;
+            case LSL:
+                cpu.ex_mem.alu_result = cpu.id_ex.val2 << cpu.id_ex.shamt ;
+                break;
+            case LSR:
+                cpu.ex_mem.alu_result = cpu.id_ex.val2 >> cpu.id_ex.shamt;
+                break;
+            case MOVR:
+                cpu.ex_mem.mem_access = WRITE;
+                cpu.ex_mem.alu_result = cpu.id_ex.val2;
+                break;
+            case MOVM:
+                cpu.ex_mem.mem_access = READ;
+                cpu.ex_mem.alu_result = cpu.id_ex.val2 + cpu.id_ex.imm;
+                break;
+            default: printf("alu skipped");
+        }
+        // compute ALU result
+        // store in ex_mem
     }
-    int stage_cycle = (cpu.cycles % 2 == 0) ? 1 : 2;
-    printf("Execute Stage: Executing instruction 0x%08X (Cycle %d/2)\n",
-           cpu.ex_stage.instruction, stage_cycle);
+
+    if (cpu.ex_mem.cycles_in_stage == 2) {
+        // evaluate branch/jump
+        // if taken: flush, update PC
+        // move to MEM
+        cpu.ex_mem.cycles_in_stage = 0;
+        cpu.id_ex.valid=false;
+        cpu.ex_mem.valid=true;
+    }
+
 }
 
 void memory_stage(void) {
     // Structural Hazard: Only MEM access on EVEN cycles
-    if (cpu.cycles % 2 != 0 || !cpu.mem_stage.valid) {
+    if (cpu.cycles % 2 != 0 || !cpu.ex_mem.valid) {
         printf("Memory Stage: Idle\n");
         return;
     }
-    printf("Memory Stage: Accessing memory for instruction 0x%08X\n", cpu.mem_stage.instruction);
+
+    cpu.ex_mem.valid=false;
+    cpu.mem_wb.valid=true;
+    printf("Memory Stage: Accessing memory for instruction 0x%08X\n", cpu.ex_mem.instruction);
 }
 
 void writeback_stage(void) {
-    if (cpu.cycles % 2 == 0 || !cpu.wb_stage.valid) {
+    if (cpu.cycles % 2 == 0 || !cpu.mem_wb.valid) {
         printf("Write Back Stage: Idle\n");
         return;
     }
-    printf("Write Back Stage: Writing back result for instruction 0x%08X\n", cpu.wb_stage.instruction);
+    cpu.mem_wb.valid=false;
+    printf("Write Back Stage: Writing back result for instruction 0x%08X\n", cpu.mem_wb.instruction);
 }
 
 void step_cycle(void) {
     cpu.cycles++;
     printf("--- Clock Cycle %u ---\n", cpu.cycles);
 
-    // LATCH TRANSFERS (At clock edge)
-    if (cpu.cycles % 2 == 1 && cpu.cycles > 1) {
-        cpu.wb_stage.instruction = cpu.mem_stage.instruction;
-        cpu.wb_stage.valid = cpu.mem_stage.valid;
-        cpu.mem_stage.valid = false;
-    }
-
-    if (cpu.cycles % 2 == 0) {
-        cpu.mem_stage.instruction = cpu.ex_stage.instruction;
-        cpu.mem_stage.valid = cpu.ex_stage.valid;
-        
-        cpu.ex_stage.instruction = cpu.id_stage.instruction;
-        cpu.ex_stage.valid = cpu.id_stage.valid;
-        
-        cpu.id_stage.instruction = cpu.if_id.instruction;
-        cpu.id_stage.valid = cpu.if_id.valid;
-        cpu.if_id.valid = false;
-    }
-
     // RUN STAGES
-    fetch_stage();
-    decode_stage();
-    execute_stage();
-    memory_stage();
     writeback_stage();
+    memory_stage();
+    execute_stage();
+    decode_stage();
+    fetch_stage();
 
     if (cpu.pc >= get_instruction_count() && 
-        !cpu.if_id.valid && !cpu.id_stage.valid && 
-        !cpu.ex_stage.valid && !cpu.mem_stage.valid && 
-        !cpu.wb_stage.valid) {
+        !cpu.if_id.valid && !cpu.id_ex.valid &&
+        !cpu.ex_mem.valid && !cpu.mem_wb.valid) {
         cpu.running = false;
     }
 }

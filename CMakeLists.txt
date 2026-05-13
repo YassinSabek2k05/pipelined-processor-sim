@@ -12,6 +12,8 @@ add_executable(program
     src/memory.c
     src/parser.c
     src/pipeline.c
+        include/structs.h
+        include/structs.h
 )
 
 target_include_directories(program PRIVATE "${CMAKE_SOURCE_DIR}/include")

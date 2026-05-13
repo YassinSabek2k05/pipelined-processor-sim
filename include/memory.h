@@ -1,11 +1,10 @@
 #ifndef MEMORY_H
 #define MEMORY_H
 
+#include "structs.h"
 #include <stdint.h>
 
-#define MEMORY_SIZE 2048
-#define INSTRUCTION_SEGMENT_END 1024
-#define DATA_SEGMENT_START 1024
+
 
 extern uint32_t memory[MEMORY_SIZE];
 
