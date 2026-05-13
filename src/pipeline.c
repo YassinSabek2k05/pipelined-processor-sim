@@ -6,6 +6,7 @@
 #include "../include/structs.h"
 
 ProcessorState cpu;
+bool pipeline_stalled = false; // fetch/decode stop
 
 void init_processor(void) {
     // Reset all architectural and pipeline state
@@ -19,6 +20,11 @@ void init_processor(void) {
     cpu.running = true;
 }
 bool detect_load_use_hazard(void) {
+    // the execute stage already bubbled
+    if (cpu.ex_mem.cycles_in_stage == 0 && !cpu.ex_mem.valid) {
+        return false;
+    }
+
     // is the instruction in EX/MEM a load?
     if (cpu.ex_mem.mem_access != READ) return false;
 
@@ -30,6 +36,12 @@ bool detect_load_use_hazard(void) {
     return false;
 }
 void fetch_stage(void) {
+
+    if (pipeline_stalled) { // stall fetch
+        printf("Fetch Stage: Idle (Stalled due to Load-Use Data Hazard)\n");
+        return;
+    }
+
     // Structural Hazard: Only fetch on ODD cycles in Package 2
     if (cpu.cycles % 2 != 1) {
         printf("Fetch Stage: Idle (Waiting for even cycle to finish MEM)\n");
@@ -82,6 +94,16 @@ void decode_stage(void) {
         cpu.id_ex.address = cpu.id_ex.instruction & 0x0FFFFFFF;
         cpu.id_ex.shamt = cpu.id_ex.instruction & 0x1FFF;
         cpu.id_ex.imm = sign_extend_18(cpu.id_ex.instruction & 0x3FFFF);
+
+        if (detect_load_use_hazard()) // detected hazard (stall scenario)
+        {
+            printf("Decode Stage: STALL! Load-Use Hazard detected. Waiting for memory.\n");
+            pipeline_stalled = true;
+            cpu.id_ex.cycles_in_stage = 0;
+            return;
+        }
+
+        pipeline_stalled = false;
 
 
         printf("Decode Stage: Decoding instruction 0x%08X (Cycle %d/2)---", cpu.id_ex.instruction, cpu.id_ex.cycles_in_stage);
