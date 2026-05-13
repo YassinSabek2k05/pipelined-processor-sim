@@ -131,7 +131,7 @@ void execute_stage(void) {
         cpu.ex_mem.pc            = cpu.id_ex.pc;
         cpu.ex_mem.valid         = false;
         cpu.ex_mem.reg_write     = false;
-        cpu.ex_mem.mem_access    = WRITE;
+        cpu.ex_mem.mem_access    = NONE;
         cpu.ex_mem.dest          = 0;
         cpu.ex_mem.alu_result    = 0;
         cpu.ex_mem.store_data    = 0;
@@ -183,16 +183,16 @@ void execute_stage(void) {
                 cpu.ex_mem.reg_write  = true;
                 break;
             case MOVR:
-                cpu.ex_mem.mem_access = WRITE;
-                cpu.ex_mem.alu_result = cpu.id_ex.val2;
-                cpu.ex_mem.store_data = cpu.id_ex.val1;
-                cpu.ex_mem.reg_write  = false;
+                cpu.ex_mem.mem_access = READ;
+                cpu.ex_mem.alu_result = cpu.id_ex.val2+cpu.id_ex.imm;
+                cpu.ex_mem.dest = cpu.id_ex.r1;
+                cpu.ex_mem.reg_write  = true;
                 break;
             case MOVM:
-                cpu.ex_mem.mem_access = READ;
-                cpu.ex_mem.alu_result = cpu.id_ex.val2 + cpu.id_ex.imm;
-                cpu.ex_mem.dest       = cpu.id_ex.r1;
-                cpu.ex_mem.reg_write  = true;
+                cpu.ex_mem.mem_access = WRITE;
+                cpu.ex_mem.alu_result = cpu.id_ex.val2+cpu.id_ex.imm;
+                cpu.ex_mem.store_data = cpu.id_ex.val1;
+                cpu.ex_mem.reg_write  = false;
                 break;
             case JMP:
                 cpu.ex_mem.branch_taken  = true;
@@ -200,12 +200,12 @@ void execute_stage(void) {
                 cpu.ex_mem.reg_write     = false;
                 break;
             case JEQ:
-                cpu.ex_mem.branch_taken  = (cpu.id_ex.val1 == cpu.id_ex.val2);
-                cpu.ex_mem.branch_target = (uint32_t)(cpu.id_ex.pc + 1 + cpu.id_ex.imm);
-                cpu.ex_mem.reg_write     = false;
+                cpu.ex_mem.branch_taken = (cpu.id_ex.val1==cpu.id_ex.val2);
+                cpu.ex_mem.branch_target = (cpu.id_ex.pc& 0xF0000000) + (cpu.id_ex.address);
+                cpu.ex_mem.reg_write    = false;
                 break;
             default:
-                printf("alu skipped\n");
+                printf("invalid error\n");
                 break;
         }
     }
@@ -240,6 +240,12 @@ void memory_stage(void) {
     cpu.mem_wb.alu_result  = cpu.ex_mem.alu_result;
     cpu.mem_wb.dest        = cpu.ex_mem.dest;
     cpu.mem_wb.reg_write   = cpu.ex_mem.reg_write;
+    if (cpu.ex_mem.mem_access==WRITE) {
+        write_memory(cpu.ex_mem.alu_result, cpu.ex_mem.store_data);
+    }
+    else if (cpu.ex_mem.mem_access==READ) {
+        cpu.mem_wb.alu_result = read_memory(cpu.ex_mem.alu_result);
+    }
     printf("dest %d in mem stage\n", cpu.ex_mem.dest);
     cpu.ex_mem.valid = false;
     cpu.mem_wb.valid = true;
@@ -290,7 +296,6 @@ void write_register(uint8_t reg_idx, uint32_t value) {
         cpu.R[reg_idx] = value;
     }
 }
-
 void print_final_state(void) {
     printf("\n=== Final Architectural Register State (The 33 Registers) ===\n");
     printf("PC: %u\n", cpu.pc);

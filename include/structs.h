@@ -10,7 +10,8 @@
 #define PIPELINED_PROCESSOR_SIM_STRUCTS_H
 enum ACCESS {
     READ = 0,
-    WRITE = 1
+    WRITE = 1,
+    NONE = -1
 };
 enum OPCODE {
     ADD = 0,
