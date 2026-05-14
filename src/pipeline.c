@@ -6,7 +6,17 @@
 #include "../include/structs.h"
 
 ProcessorState cpu;
-bool pipeline_stalled = false; // fetch/decode stop
+bool pipeline_stalled = false;
+
+// ── GUI history ───────────────────────────────────────────────────────────────
+PipelineSnapshot gui_snapshots[MAX_GUI_HISTORY];
+int              gui_snapshot_count = 0;
+static PipelineSnapshot gui_cur_snap;
+
+void gui_record_stage(int stage, int pc_addr) {
+    if (stage >= 0 && stage < 5)
+        gui_cur_snap.stage_pc[stage] = pc_addr;
+}
 
 void init_processor(void) {
     // Reset all architectural and pipeline state
@@ -53,6 +63,7 @@ void fetch_stage(void) {
         cpu.if_id.instruction = read_memory(cpu.pc);
         cpu.if_id.pc = cpu.pc;
         cpu.if_id.valid = true;
+        gui_record_stage(0, (int)cpu.if_id.pc);
         printf("Fetch Stage: Fetching instruction 0x%08X from address %u\n",
                cpu.if_id.instruction, cpu.pc);
 
@@ -104,7 +115,7 @@ void decode_stage(void) {
         }
 
         pipeline_stalled = false;
-
+        gui_record_stage(1, (int)cpu.id_ex.pc);
 
         printf("Decode Stage: Decoding instruction 0x%08X (Cycle %d/2)---", cpu.id_ex.instruction, cpu.id_ex.cycles_in_stage);
         printf("Opcode: %d---", cpu.id_ex.opcode);
@@ -116,6 +127,7 @@ void decode_stage(void) {
         printf("Address: %d\n", cpu.id_ex.address);
     }
     else if (cpu.id_ex.cycles_in_stage== 2) {
+        gui_record_stage(1, (int)cpu.id_ex.pc);
         cpu.id_ex.valid=true;
         cpu.if_id.valid=false;
         printf("Decode Stage: Decoding instruction 0x%08X (Cycle %d/2) - Opcode: %d\n",
@@ -126,6 +138,15 @@ void decode_stage(void) {
 
 void execute_stage(void) {
     if (!cpu.id_ex.valid && cpu.ex_mem.cycles_in_stage != 1) return;
+
+    // Record before increment: cycles_in_stage==0 means starting cycle 1 (pc in id_ex),
+    // cycles_in_stage==1 means starting cycle 2 (pc already latched into ex_mem).
+    {
+        int exec_pc = (cpu.ex_mem.cycles_in_stage == 0)
+                      ? (int)cpu.id_ex.pc
+                      : (int)cpu.ex_mem.pc;
+        gui_record_stage(2, exec_pc);
+    }
 
     cpu.ex_mem.cycles_in_stage++;
 
@@ -218,13 +239,13 @@ void execute_stage(void) {
                 break;
             case JMP:
                 cpu.ex_mem.branch_taken  = true;
-                cpu.ex_mem.branch_target = cpu.id_ex.address;
+                cpu.ex_mem.branch_target = (cpu.id_ex.pc & 0xF0000000) | cpu.id_ex.address;
                 cpu.ex_mem.reg_write     = false;
                 break;
             case JEQ:
-                cpu.ex_mem.branch_taken = (cpu.id_ex.val1==cpu.id_ex.val2);
-                cpu.ex_mem.branch_target = (cpu.id_ex.pc& 0xF0000000) + (cpu.id_ex.address);
-                cpu.ex_mem.reg_write    = false;
+                cpu.ex_mem.branch_taken  = (cpu.id_ex.val1 == cpu.id_ex.val2);
+                cpu.ex_mem.branch_target = (uint32_t)(cpu.id_ex.pc + 1 + cpu.id_ex.imm);
+                cpu.ex_mem.reg_write     = false;
                 break;
             default:
                 printf("invalid error\n");
@@ -257,6 +278,7 @@ void memory_stage(void) {
         printf("Memory Stage: Idle\n");
         return;
     }
+    gui_record_stage(3, (int)cpu.ex_mem.pc);
     cpu.mem_wb.instruction = cpu.ex_mem.instruction;
     cpu.mem_wb.pc          = cpu.ex_mem.pc;
     cpu.mem_wb.alu_result  = cpu.ex_mem.alu_result;
@@ -279,6 +301,7 @@ void writeback_stage(void) {
         printf("Write Back Stage: Idle\n");
         return;
     }
+    gui_record_stage(4, (int)cpu.mem_wb.pc);
     if (cpu.mem_wb.reg_write) {
         printf("writing %d to register %d\n", cpu.mem_wb.alu_result, cpu.mem_wb.dest);
         write_register(cpu.mem_wb.dest, cpu.mem_wb.alu_result);
@@ -291,6 +314,9 @@ void step_cycle(void) {
     cpu.cycles++;
     printf("--- Clock Cycle %u ---\n", cpu.cycles);
 
+    // Init snapshot for this cycle
+    for (int i = 0; i < 5; i++) gui_cur_snap.stage_pc[i] = -1;
+
     // RUN STAGES
     writeback_stage();
     memory_stage();
@@ -298,7 +324,11 @@ void step_cycle(void) {
     decode_stage();
     fetch_stage();
 
-    if (cpu.pc >= get_instruction_count() && 
+    // Commit snapshot
+    if (gui_snapshot_count < MAX_GUI_HISTORY)
+        gui_snapshots[gui_snapshot_count++] = gui_cur_snap;
+
+    if (cpu.pc >= get_instruction_count() &&
         !cpu.if_id.valid && !cpu.id_ex.valid &&
         !cpu.ex_mem.valid && !cpu.mem_wb.valid) {
         cpu.running = false;

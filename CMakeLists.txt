@@ -6,15 +6,27 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 
 file(TO_CMAKE_PATH "${CMAKE_SOURCE_DIR}" PROJECT_SOURCE_PATH)
 
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+
+include(FetchContent)
+FetchContent_Declare(
+    raylib
+    GIT_REPOSITORY https://github.com/raysan5/raylib.git
+    GIT_TAG        4.2.0
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(raylib)
+
 add_executable(program
     src/main.c
     src/loader.c
     src/memory.c
     src/parser.c
     src/pipeline.c
-        include/structs.h
-        include/structs.h
+    src/gui.c
+    include/structs.h
 )
 
 target_include_directories(program PRIVATE "${CMAKE_SOURCE_DIR}/include")
 target_compile_definitions(program PRIVATE "PROJECT_SOURCE_DIR=\"${PROJECT_SOURCE_PATH}\"")
+target_link_libraries(program raylib)
