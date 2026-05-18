@@ -1,6 +1,8 @@
 //
 // Created by pc on 5/13/2026.
 //
+#ifndef STRUCTS_H
+#define STRUCTS_H
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -8,6 +10,7 @@
 
 #ifndef PIPELINED_PROCESSOR_SIM_STRUCTS_H
 #define PIPELINED_PROCESSOR_SIM_STRUCTS_H
+// For MOVR: READ and MOVM: WRITE
 enum ACCESS {
     READ = 0,
     WRITE = 1,
@@ -28,7 +31,7 @@ enum OPCODE {
     MOVM = 11,
   };
 /**
- * 1. ARCHITECTURAL REGISTERS (33 Registers Total)
+ * 1. ARCHITECTURAL REGISTERS (32 GPRs + PC stored separately = 33 architectural registers)
  * These are the registers defined by the ISA for Package 2.
  */
 #define NUM_GPR 32  // R0 to R31 (32 registers)
@@ -39,7 +42,8 @@ enum OPCODE {
  * These are internal hardware latches between stages.
  * They are NOT part of the 33 architectural registers.
  */
-
+// pc is carried across multiple stages to track each instruction's address through the pipeline for branch resolution and GUI display.
+// valid indicates whether the stage holds an active instruction; used for flushing on branches and stall control.
 typedef struct {
     uint32_t instruction;
     uint32_t pc;
@@ -50,6 +54,7 @@ typedef struct {
     uint32_t instruction;
     uint32_t pc;
     bool valid;
+    // Decode takes 2 cycles
     int cycles_in_stage;    // 1 or 2
 
     // decoded fields
@@ -100,7 +105,7 @@ typedef struct {
 typedef struct {
     // Architectural State
     uint32_t pc;
-    int32_t  R[33];
+    int32_t  R[32];
 
     // Simulation Control
     uint32_t cycles;
@@ -110,10 +115,6 @@ typedef struct {
     ID_EX_Reg  id_ex;
     EX_MEM_Reg ex_mem;
     MEM_WB_Reg mem_wb;
-
-    // Hazard State
-    bool stall;
-    bool flush;
 } ProcessorState;
 
 #define MEMORY_SIZE 2048
@@ -121,3 +122,4 @@ typedef struct {
 #define DATA_SEGMENT_START 1024
 
 #endif //PIPELINED_PROCESSOR_SIM_STRUCTS_H
+#endif // STRUCTS_H

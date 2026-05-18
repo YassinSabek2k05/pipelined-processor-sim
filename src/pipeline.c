@@ -38,7 +38,7 @@ bool detect_load_use_hazard(void) {
     // is the instruction in EX/MEM a load?
     if (cpu.ex_mem.mem_access != READ) return false;
 
-    // does the instruction about to enter EX need that register?
+    // does the instruction about to read its registers (decode cycle 2) need that register?
     if (cpu.ex_mem.dest == cpu.id_ex.r1 ||
         cpu.ex_mem.dest == cpu.id_ex.r2) {
         return true;
@@ -99,6 +99,11 @@ void decode_stage(void) {
         cpu.id_ex.opcode = (enum OPCODE)(cpu.id_ex.instruction >> 28);
 
         // Decode register fields FIRST, then use them for forwarding
+        /*
+         *  R-Type: [4-bit opcode][5-bit r1][5-bit r2][5-bit r3][13-bit unused]
+         *  I-Type: [4-bit opcode][5-bit r1][5-bit r2][18-bit immediate]
+         *  J-Type: [4-bit opcode][28-bit address]
+         */
         cpu.id_ex.r1 = (cpu.id_ex.instruction >> 23) & 0x1F;
         cpu.id_ex.r2 = (cpu.id_ex.instruction >> 18) & 0x1F;
         cpu.id_ex.r3 = (cpu.id_ex.instruction >> 13) & 0x1F;
@@ -116,18 +121,31 @@ void decode_stage(void) {
 
         pipeline_stalled = false;
         gui_record_stage(1, (int)cpu.id_ex.pc);
-
-        printf("Decode Stage: Decoding instruction 0x%08X (Cycle %d/2)---", cpu.id_ex.instruction, cpu.id_ex.cycles_in_stage);
-        printf("Opcode: %d---", cpu.id_ex.opcode);
-        printf("R1: %d, Val1: %d ---", cpu.id_ex.r1, cpu.id_ex.val1);
-        printf("R2: %d, Val2: %d ---", cpu.id_ex.r2, cpu.id_ex.val2);
-        printf("R3: %d ---", cpu.id_ex.r3);
-        printf("Imm: %d ---", cpu.id_ex.imm);
-        printf("Shamt: %d ---", cpu.id_ex.shamt);
-        printf("Address: %d\n", cpu.id_ex.address);
     }
     else if (cpu.id_ex.cycles_in_stage== 2) {
         gui_record_stage(1, (int)cpu.id_ex.pc);
+
+        // Register file read — with forwarding from later stages
+        if (cpu.ex_mem.valid && cpu.ex_mem.reg_write && cpu.id_ex.r1 == cpu.ex_mem.dest) {
+            printf("forwarding: r1 from EX/MEM\n");
+            cpu.id_ex.val1 = cpu.ex_mem.alu_result;
+        } else if (cpu.mem_wb.valid && cpu.mem_wb.reg_write && cpu.id_ex.r1 == cpu.mem_wb.dest) {
+            printf("forwarding: r1 from MEM/WB\n");
+            cpu.id_ex.val1 = cpu.mem_wb.alu_result;
+        } else {
+            cpu.id_ex.val1 = cpu.R[cpu.id_ex.r1];
+        }
+
+        if (cpu.ex_mem.valid && cpu.ex_mem.reg_write && cpu.id_ex.r2 == cpu.ex_mem.dest) {
+            printf("forwarding: r2 from EX/MEM\n");
+            cpu.id_ex.val2 = cpu.ex_mem.alu_result;
+        } else if (cpu.mem_wb.valid && cpu.mem_wb.reg_write && cpu.id_ex.r2 == cpu.mem_wb.dest) {
+            printf("forwarding: r2 from MEM/WB\n");
+            cpu.id_ex.val2 = cpu.mem_wb.alu_result;
+        } else {
+            cpu.id_ex.val2 = cpu.R[cpu.id_ex.r2];
+        }
+
         cpu.id_ex.valid=true;
         cpu.if_id.valid=false;
         printf("Decode Stage: Decoding instruction 0x%08X (Cycle %d/2) - Opcode: %d\n",
@@ -137,6 +155,7 @@ void decode_stage(void) {
 }
 
 void execute_stage(void) {
+    //returning if entering this stage is not permitted
     if (!cpu.id_ex.valid && cpu.ex_mem.cycles_in_stage != 1) return;
 
     // Record before increment: cycles_in_stage==0 means starting cycle 1 (pc in id_ex),
@@ -149,27 +168,9 @@ void execute_stage(void) {
     }
 
     cpu.ex_mem.cycles_in_stage++;
-
+    //first execution cycle:
+    //opcode is used to determine the execution operation to be done
     if (cpu.ex_mem.cycles_in_stage == 1) {
-        // Latch new instruction into ex_mem and compute ALU result
-        // operand 1 (r1)
-        if (cpu.ex_mem.valid && cpu.ex_mem.reg_write && cpu.id_ex.r1 == cpu.ex_mem.dest) {
-            cpu.id_ex.val1 = cpu.ex_mem.alu_result;
-        } else if (cpu.mem_wb.valid && cpu.mem_wb.reg_write && cpu.id_ex.r1 == cpu.mem_wb.dest) {
-            cpu.id_ex.val1 = cpu.mem_wb.alu_result;
-        } else {
-            cpu.id_ex.val1 = cpu.R[cpu.id_ex.r1];
-        }
-
-        // operand 2 (r2)
-        if (cpu.ex_mem.valid && cpu.ex_mem.reg_write && cpu.id_ex.r2 == cpu.ex_mem.dest) {
-            cpu.id_ex.val2 = cpu.ex_mem.alu_result;
-        } else if (cpu.mem_wb.valid && cpu.mem_wb.reg_write && cpu.id_ex.r2 == cpu.mem_wb.dest) {
-            cpu.id_ex.val2 = cpu.mem_wb.alu_result;
-        } else {
-            cpu.id_ex.val2 = cpu.R[cpu.id_ex.r2];
-        }
-
         cpu.ex_mem.instruction   = cpu.id_ex.instruction;
         cpu.ex_mem.pc            = cpu.id_ex.pc;
         cpu.ex_mem.valid         = false;
@@ -187,7 +188,6 @@ void execute_stage(void) {
                 cpu.ex_mem.alu_result = cpu.id_ex.val1 + cpu.id_ex.val2;
                 cpu.ex_mem.dest       = cpu.id_ex.r3;
                 cpu.ex_mem.reg_write  = true;
-                printf("----------------\nalu=%d\n----------------\n", cpu.ex_mem.alu_result);
                 break;
             case SUB:
                 cpu.ex_mem.alu_result = cpu.id_ex.val1 - cpu.id_ex.val2;
@@ -203,7 +203,6 @@ void execute_stage(void) {
                 cpu.ex_mem.alu_result = cpu.id_ex.imm;
                 cpu.ex_mem.dest       = cpu.id_ex.r1;
                 cpu.ex_mem.reg_write  = true;
-                printf("dest %d----------alu %d\n ", cpu.ex_mem.dest,cpu.ex_mem.alu_result);
                 break;
             case AND:
                 cpu.ex_mem.alu_result = cpu.id_ex.val1 & cpu.id_ex.val2;
@@ -238,6 +237,7 @@ void execute_stage(void) {
                 cpu.ex_mem.reg_write  = false;
                 break;
             case JMP:
+                //the target is
                 cpu.ex_mem.branch_taken  = true;
                 cpu.ex_mem.branch_target = (cpu.id_ex.pc & 0xF0000000) | cpu.id_ex.address;
                 cpu.ex_mem.reg_write     = false;
@@ -252,17 +252,19 @@ void execute_stage(void) {
                 break;
         }
     }
-
+    //second execution cycle
     if (cpu.ex_mem.cycles_in_stage == 2) {
         printf("Execute: cycle 2/2\n");
         printf("alu in cycle 2 %d\n", cpu.ex_mem.alu_result);
         cpu.ex_mem.cycles_in_stage = 0;
         cpu.id_ex.valid  = false;
         cpu.ex_mem.valid = true;
-
+        //if the branch was taken, then we flush started instructions
+        //and update the pc value to the target which was calculated
+        //and stored in the alu during the first execution cycle
         if (cpu.ex_mem.branch_taken) {
             cpu.pc = cpu.ex_mem.branch_target;
-            //flushing
+            //flushing is done by just invalidating the already started instructions that assumed not jumping
             cpu.if_id.valid          = false;
             cpu.id_ex.valid          = false;
             cpu.id_ex.cycles_in_stage = 0;
