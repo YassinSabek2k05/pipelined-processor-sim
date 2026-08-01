@@ -2,6 +2,8 @@
 
 A C implementation of a 5-stage pipelined processor simulator for the **CSEN601 (Computer Systems Architecture)** "Package 2: Fillet-O-Neumann with moves on the side" project, with a [raylib](https://www.raylib.com/)-based GUI for visualizing instructions as they flow through the pipeline.
 
+![Simulation screenshot](imgs/img.png)
+
 ## Architecture
 
 - **Von Neumann memory**: a single 2048 x 32-bit word-addressable memory shared by instructions and data.
